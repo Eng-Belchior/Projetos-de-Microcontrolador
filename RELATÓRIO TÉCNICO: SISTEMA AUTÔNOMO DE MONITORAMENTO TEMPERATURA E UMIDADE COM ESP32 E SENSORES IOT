@@ -1,0 +1,195 @@
+#include "DHT.h"
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <SPI.h> // Adiciona a biblioteca SPI
+
+// --- 1. DEFINIÇÃO DE PINOS E TIPO DE SENSOR ---
+#define DHTPIN    4       // Pino GPIO para o DATA do DHT22
+#define DHTTYPE   DHT22   // Tipo de sensor: DHT22 (AM2302)
+#define LEDPIN    2       // NOVO PINO GPIO para o LED indicador
+#define BUTTONPIN 0       // Pino GPIO para o botão de reset (conectado a GND)
+
+// --- 2. CONFIGURAÇÃO DO DISPLAY OLED (MODO SPI) ---
+#define SCREEN_WIDTH 128  
+#define SCREEN_HEIGHT 64  
+
+// Definição dos pinos SPI:
+#define OLED_CS    16    // Chip Select (CS) - Novo pino
+#define OLED_DC    17    // Data/Command (DC) - Novo pino
+#define OLED_RESET 5     // Reset (RES) - Novo pino (mudei para o 5)
+
+// Inicializa objetos das bibliotecas
+DHT dht(DHTPIN, DHTTYPE);
+// Cria o objeto do display usando a interface SPI (pinos definidos acima)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET, OLED_CS);
+
+// --- 3. VARIÁVEIS GLOBAIS DE MEDIÇÃO E LOG ---
+float currentTemp_C = 0.0;
+float currentHumidity = 0.0;
+float maxTemp_C = -999.0;
+float minTemp_C = 999.0;
+float maxHumidity = -999.0;
+float minHumidity = 999.0;
+
+bool isFirstReading = true; 
+
+// --- 4. FUNÇÃO SETUP ---
+void setup() {
+  Serial.begin(115200);
+  
+  // Configura os pinos do LED e do Botão
+  pinMode(LEDPIN, OUTPUT);
+  pinMode(BUTTONPIN, INPUT_PULLUP); 
+
+  // Inicia o sensor DHT
+  dht.begin();
+
+  // Inicia o display OLED em modo SPI
+  // Os pinos CLK (D0) e MOSI (D1) usam os padrões do ESP32 (GPIO 18 e 23) por padrão
+  if(!display.begin(SSD1306_SWITCHCAPVCC, OLED_CS, OLED_DC, OLED_RESET)) {
+    Serial.println(F("Falha ao alocar SSD1306 (SPI)"));
+    for(;;); 
+  }
+
+  // Tela de inicialização
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0,0);
+  display.println(F("DHT22 OLED"));
+  display.setTextSize(1);
+  display.setCursor(0, 20);
+  display.println(F("Modo SPI OK!"));
+  display.display();
+  delay(1000);
+}
+
+// --- 5. FUNÇÕES AUXILIARES ---
+
+/**
+ * @brief Reseta os valores Máximo e Mínimo para as leituras atuais.
+ */
+void resetMaxMin() {
+  maxTemp_C = currentTemp_C;
+  minTemp_C = currentTemp_C;
+  maxHumidity = currentHumidity;
+  minHumidity = currentHumidity;
+
+  display.clearDisplay();
+  display.setCursor(0, 25);
+  display.setTextSize(2);
+  display.println(F("RESET OK!"));
+  display.display();
+  delay(500);
+  Serial.println(F("Max/Min Resetados para valores atuais."));
+}
+
+/**
+ * @brief Atualiza o display OLED com todos os dados.
+ */
+void updateDisplay() {
+  display.clearDisplay();
+
+  // 1. Linha Título
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println(F("TEMP. e UMIDADE DHT22"));
+
+  // Linha separadora
+  display.drawLine(0, 10, SCREEN_WIDTH - 1, 10, SSD1306_WHITE); 
+
+  // 2. Leitura Atual (MAIOR DESTAQUE)
+  display.setTextSize(2);
+  // Temperatura Atual
+  display.setCursor(0, 15);
+  display.print(currentTemp_C, 1);
+  display.print(F(" C"));
+  // Umidade Atual
+  display.setCursor(75, 15);
+  display.print(currentHumidity, 0);
+  display.print(F(" %"));
+
+  // 3. Log de Máximo e Mínimo
+  display.setTextSize(1);
+  
+  // Coluna Máxima
+  display.setCursor(0, 40);
+  display.print(F("MAX: "));
+  display.print(maxTemp_C, 1);
+  display.print(F("C / "));
+  display.print(maxHumidity, 0);
+  display.print(F("%"));
+
+  // Coluna Mínima
+  display.setCursor(0, 55);
+  display.print(F("MIN: "));
+  display.print(minTemp_C, 1);
+  display.print(F("C / "));
+  display.print(minHumidity, 0);
+  display.print(F("%"));
+  
+  display.display();
+}
+
+// --- 6. FUNÇÃO LOOP ---
+void loop() {
+  // O DHT22 só deve ser lido a cada 2 segundos.
+  delay(2000); 
+
+  // --- A. LEITURA E LED INDICADOR ---
+  
+  // Pisca o LED para sinalizar a nova medição
+  digitalWrite(LEDPIN, HIGH); 
+  
+  // Lê os valores do sensor
+  float h = dht.readHumidity();
+  float t = dht.readTemperature(); 
+  
+  digitalWrite(LEDPIN, LOW); 
+
+  // --- B. TRATAMENTO DE ERROS ---
+  
+  if (isnan(h) || isnan(t)) {
+    Serial.println(F("Falha na leitura do sensor DHT!"));
+    display.clearDisplay();
+    display.setCursor(0, 25);
+    display.setTextSize(1);
+    display.println(F("ERRO: LEITURA DHT"));
+    display.display();
+    return; // Pula o resto do loop e tenta novamente
+  }
+
+  // Armazena as leituras atuais
+  currentHumidity = h;
+  currentTemp_C = t;
+  
+  Serial.print(F("Umidade: ")); Serial.print(h); Serial.print(F(" % | "));
+  Serial.print(F("Temperatura: ")); Serial.print(t); Serial.println(F(" *C"));
+
+  // --- C. ATUALIZAÇÃO DOS VALORES MÁX/MÍN ---
+  
+  if (isFirstReading) {
+    resetMaxMin();
+    isFirstReading = false;
+  }
+  
+  // Atualiza Máximo
+  if (currentTemp_C > maxTemp_C) { maxTemp_C = currentTemp_C; }
+  if (currentHumidity > maxHumidity) { maxHumidity = currentHumidity; }
+  
+  // Atualiza Mínimo
+  if (currentTemp_C < minTemp_C) { minTemp_C = currentTemp_C; }
+  if (currentHumidity < minHumidity) { minHumidity = currentHumidity; }
+
+  // --- D. VERIFICAÇÃO DO BOTÃO ---
+  
+  // A leitura será LOW (0) quando o botão for pressionado
+  if (digitalRead(BUTTONPIN) == LOW) {
+    resetMaxMin(); 
+    delay(200); 
+  }
+
+  // --- E. EXIBIÇÃO ---
+  updateDisplay();
+}
