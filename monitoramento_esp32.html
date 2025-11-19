@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitoramento Autônomo (DHT22 + I²C)</title>
+    <title>Monitoramento Autônomo (DHT22)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -69,7 +69,7 @@
         <section id="overview" class="pt-16 -mt-16">
             <h1 class="text-4xl font-bold text-gray-900 mb-4">Monitoramento Ambiental Avançado com ESP32</h1>
             <p class="text-lg text-gray-600 mb-8">
-                Esta aplicação explora um projeto de sistema de medição de Temperatura e Umidade. O dispositivo físico usa um sensor DHT22, um display OLED (via **I²C**) e um botão de reset para registrar os valores máximos e mínimos. Abaixo, você pode interagir com um simulador de software que replica o comportamento e a lógica do dispositivo final.
+                Esta aplicação explora um projeto de sistema de medição de Temperatura e Umidade. O dispositivo físico usa um sensor DHT22, um display OLED (via I²C) e um botão de reset para registrar os valores máximos e mínimos. Abaixo, você pode interagir com um simulador de software que replica o comportamento e a lógica do dispositivo final.
             </p>
 
             <!-- Simulator -->
@@ -116,7 +116,7 @@
         <section id="architecture" class="pt-24 -mt-16">
             <h2 class="text-3xl font-bold text-gray-900 mb-4">Arquitetura de Hardware</h2>
             <p class="text-lg text-gray-600 mb-8">
-                A escolha dos componentes e sua conexão definem a performance do sistema. O projeto utiliza o ESP32 por sua alta capacidade de processamento. Esta seção detalha o mapeamento de pinos e o protocolo de comunicação **I²C** utilizado.
+                A escolha dos componentes e sua conexão definem a performance do sistema. O projeto utiliza o ESP32 por sua alta capacidade de processamento. Esta seção detalha o mapeamento de pinos e o protocolo de comunicação I²C utilizado.
             </p>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -171,12 +171,12 @@
                     <div class="space-y-2">
                         <h4 class="font-medium">Benefícios do I²C para Expansão</h4>
                         <ul class="list-disc list-inside text-gray-600">
-                            <li>**Fiação Mínima:** Utiliza apenas 2 pinos (SDA - Data e SCL - Clock).</li>
-                            <li>**Escalabilidade:** Permite conectar múltiplos dispositivos (cada um com um endereço único) ao mesmo par de pinos.</li>
+                            <li>**Fiação Mínima: Utiliza apenas 2 pinos (SDA - Data e SCL - Clock).</li>
+                            <li>**Escalabilidade: Permite conectar múltiplos dispositivos (cada um com um endereço único) ao mesmo par de pinos.</li>
                             <li>**Aplicações:** Ideal para dispositivos de baixa e média velocidade, como displays e a maioria dos sensores ambientais.</li>
                         </ul>
                         <div class="mt-4 p-3 bg-blue-100 border-l-4 border-blue-500 text-blue-800 rounded-r-md">
-                            <span class="font-bold">Nota:</span> Um sensor de pressão como o BMP280, que usa I²C, pode ser adicionado diretamente aos pinos **GPIO 21** e **GPIO 22**.
+                            <span class="font-bold">Nota:</span> Um sensor de pressão como o BMP280, que usa I²C, pode ser adicionado diretamente aos pinos GPIO 21 e GPIO 22.
                         </div>
                     </div>
                 </div>
@@ -187,7 +187,7 @@
         <section id="logic" class="pt-24 -mt-16">
             <h2 class="text-3xl font-bold text-gray-900 mb-4">Lógica do Software</h2>
             <p class="text-lg text-gray-600 mb-8">
-                O *firmware* do ESP32 é responsável por três tarefas principais: rastrear o estado (Máx/Mín), interagir com o usuário (botão) e, agora, expandir para um controle de processo mais complexo.
+                O firmware do ESP32 é responsável por três tarefas principais: rastrear o estado (Máx/Mín), interagir com o usuário (botão) e, agora, expandir para um controle de processo mais complexo.
             </p>
 
             <div class="space-y-8">
@@ -206,10 +206,10 @@ if (currentTemp_C < minTemp_C) { minTemp_C = currentTemp_C; }
                     <h3 class="text-xl font-semibold mb-4 text-gray-900">⏯️ Interação: Botão de Reset (Pull-up)</h3>
                     <p class="text-gray-600 mb-4">O botão (GPIO 23) permite ao usuário resetar o log de Máx/Mín. Ele usa o resistor `pull-up` interno do ESP32, o que simplifica o hardware.</p>
                     <ul class="list-disc list-inside text-gray-600 space-y-2">
-                        <li>**Configuração:** `pinMode(BUTTONPIN, INPUT_PULLUP);`</li>
-                        <li>**Estado Ocioso:** O pino é mantido em nível LÓGICO ALTO (HIGH).</li>
-                        <li>**Acionamento:** Ao pressionar, o botão conecta o pino ao GND, resultando em nível LÓGICO BAIXO (LOW).</li>
-                        <li>**Lógica:** `if (digitalRead(BUTTONPIN) == LOW) { resetMaxMin(); }`</li>
+                        <li>Configuração: `pinMode(BUTTONPIN, INPUT_PULLUP);`</li>
+                        <li>Estado Ocioso: O pino é mantido em nível LÓGICO ALTO (HIGH).</li>
+                        <li>Acionamento: Ao pressionar, o botão conecta o pino ao GND, resultando em nível LÓGICO BAIXO (LOW).</li>
+                        <li>Lógica: `if (digitalRead(BUTTONPIN) == LOW) { resetMaxMin(); }`</li>
                     </ul>
                 </div>
 
@@ -224,7 +224,7 @@ if (currentTemp_C < minTemp_C) { minTemp_C = currentTemp_C; }
                         </div>
                         <div class="p-4 bg-purple-50 border border-purple-200 rounded-lg">
                             <h4 class="font-bold text-purple-700">Acionamento de Cargas (Saída)</h4>
-                            <p class="text-purple-600">Com relés, o ESP32 pode controlar dispositivos externos de alta potência, como **Válvulas Solenoides** ou **Ventiladores**, para automatizar a correção de condições críticas (ex: ligar ventilador se Temp > $30^{\circ} \text{C}$).</p>
+                            <p class="text-purple-600">Com relés, o ESP32 pode controlar dispositivos externos de alta potência, como Válvulas Solenoides ou Ventiladores, para automatizar a correção de condições críticas (ex: ligar ventilador se Temp > $30^{\circ} \text{C}$).</p>
                         </div>
                     </div>
                 </div>
@@ -235,7 +235,7 @@ if (currentTemp_C < minTemp_C) { minTemp_C = currentTemp_C; }
         <section id="next-steps" class="pt-24 -mt-16">
             <h2 class="text-3xl font-bold text-gray-900 mb-4">Próximos Passos e Escalabilidade</h2>
             <p class="text-lg text-gray-600 mb-8">
-                Este projeto é uma base sólida. As melhorias óbvias focam em conectividade, persistência de dados e otimização do *firmware*.
+                Este projeto é uma base sólida. As melhorias óbvias focam em conectividade, persistência de dados e otimização do firmware.
             </p>
             <div class="space-y-4">
                 <div class="bg-white p-5 rounded-lg shadow-md">
