@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Projeto: Monitoramento ESP32 (DHT22 + SPI)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- 
+    Chosen Palette: Warm Neutral Sky
+    Application Structure Plan: A single-page application with a sticky top navigation (Visão Geral, Arquitetura, Lógica, Próximos Passos). This thematic structure is more user-friendly for web exploration than the original linear slide deck. The "Visão Geral" section will feature an interactive JavaScript-based simulation of the final device (OLED display, live chart, and functional reset button) to create an engaging "wow" factor. "Arquitetura" will use HTML/Tailwind to create a diagram of the pin mappings (as SVG is disallowed) and an interactive tab for protocol comparison. "Lógica" will explain the software concepts (state logging, button interaction, and the delay() challenge). This design prioritizes interactive engagement and comprehension over mirroring the report's structure.
+    Visualization & Content Choices:
+    - [Project Simulation -> Goal: Inform/Engage -> Method: JS + HTML/CSS Simulation + Chart.js Line Chart -> Interaction: Live data updates via setInterval(), button click -> Justification: Translates the hardware project into a tangible web experience.]
+    - [Pin Mapping -> Goal: Organize -> Method: HTML/Tailwind Diagram -> Interaction: Static visual -> Justification: Replaces a static image/SVG with structured HTML as per constraints.]
+    - [SPI vs I²C -> Goal: Compare -> Method: JS-powered Tabs -> Interaction: Click to toggle content -> Justification: Interactive comparison of technical concepts.]
+    - [delay() vs millis() -> Goal: Compare -> Method: Side-by-side text blocks -> Interaction: Static comparison -> Justification: Clearly highlights a key technical challenge from the report.]
+    CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.
+    -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* bg-slate-50 */
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 250px;
+            max-height: 300px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 300px;
+                max-height: 350px;
+            }
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <!-- Header & Navigation -->
+    <header class="bg-white/90 backdrop-blur-md shadow-sm sticky top-0 z-50">
+        <nav class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex-shrink-0">
+                    <span class="text-xl font-bold text-sky-700">Projeto ESP32</span>
+                </div>
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-4">
+                        <a href="#overview" class="nav-link text-gray-600 hover:text-sky-700 px-3 py-2 rounded-md text-sm font-medium">Visão Geral</a>
+                        <a href="#architecture" class="nav-link text-gray-600 hover:text-sky-700 px-3 py-2 rounded-md text-sm font-medium">Arquitetura</a>
+                        <a href="#logic" class="nav-link text-gray-600 hover:text-sky-700 px-3 py-2 rounded-md text-sm font-medium">Lógica do Software</a>
+                        <a href="#next-steps" class="nav-link text-gray-600 hover:text-sky-700 px-3 py-2 rounded-md text-sm font-medium">Próximos Passos</a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
+
+        <!-- Section 1: Overview & Simulator -->
+        <section id="overview" class="pt-16 -mt-16">
+            <h1 class="text-4xl font-bold text-gray-900 mb-4">Monitoramento Ambiental Avançado com ESP32</h1>
+            <p class="text-lg text-gray-600 mb-8">
+                Esta aplicação explora um projeto de sistema de medição de Temperatura e Umidade. O dispositivo físico usa um sensor DHT22, um display OLED (via SPI) e um botão de reset para registrar os valores máximos e mínimos. Abaixo, você pode interagir com um simulador de software que replica o comportamento e a lógica do dispositivo final.
+            </p>
+
+            <!-- Simulator -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                
+                <!-- Left Column: Simulated Display & Controls -->
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-900">Simulador do Dispositivo</h2>
+                    
+                    <!-- Simulated OLED Display -->
+                    <div class="bg-gray-900 text-white p-4 rounded-md border-4 border-gray-700" style="font-family: 'Courier New', monospace;">
+                        <div id="oled-line-1" class="text-xs text-yellow-300">TEMP. e UMIDADE DHT22</div>
+                        <div class="w-full h-px bg-gray-600 my-1"></div>
+                        <div id="oled-line-2" class="text-2xl">...</div>
+                        <div id="oled-line-3" class="text-2xl">...</div>
+                        <div id="oled-line-4" class="text-xs mt-2">MAX: ...</div>
+                        <div id="oled-line-5" class="text-xs">MIN: ...</div>
+                    </div>
+
+                    <!-- Controls -->
+                    <div class="flex items-center space-x-4 mt-6">
+                        <button id="resetButton" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                            Resetar Max/Min
+                        </button>
+                        <div class="flex items-center space-x-2">
+                            <div id="ledIndicator" class="w-4 h-4 bg-gray-300 rounded-full transition-colors duration-100"></div>
+                            <span class="text-sm text-gray-500">Leitura</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Live Chart -->
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-900">Log de Dados em Tempo Real</h2>
+                    <p class="text-sm text-gray-600 mb-4">O gráfico abaixo atualiza a cada 2 segundos, simulando a leitura do sensor DHT22.</p>
+                    <div class="chart-container">
+                        <canvas id="realTimeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: Architecture -->
+        <section id="architecture" class="pt-24 -mt-16">
+            <h2 class="text-3xl font-bold text-gray-900 mb-4">Arquitetura de Hardware</h2>
+            <p class="text-lg text-gray-600 mb-8">
+                A escolha dos componentes e sua conexão definem a performance do sistema. O projeto utiliza o ESP32 por sua alta capacidade de processamento. Esta seção detalha o mapeamento de pinos e o protocolo de comunicação SPI utilizado.
+            </p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- Pin Mapping Diagram (HTML/Tailwind) -->
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-gray-900">📌 Mapeamento de Pinos (ESP32)</h3>
+                    <div class="space-y-3">
+                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-red-600">DHT22</span> (Data)</span>
+                            <span class="text-sky-700 font-bold">GPIO 4</span>
+                        </div>
+                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-red-600">LED</span> (Anodo)</span>
+                            <span class="text-sky-700 font-bold">GPIO 2</span>
+                        </div>
+                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-red-600">Botão</span> (Saída)</span>
+                            <span class="text-sky-700 font-bold">GPIO 0</span>
+                        </div>
+                        <div class="w-full h-px bg-gray-300 my-3"></div>
+                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-blue-600">OLED SPI</span> (CS)</span>
+                            <span class="text-sky-700 font-bold">GPIO 16</span>
+                        </div>
+                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-blue-600">OLED SPI</span> (DC)</span>
+                            <span class="text-sky-700 font-bold">GPIO 17</span>
+                        </div>
+                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-blue-600">OLED SPI</span> (RES)</span>
+                            <span class="text-sky-700 font-bold">GPIO 5</span>
+                        </div>
+                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-blue-600">OLED SPI</span> (CLK)</span>
+                            <span class="text-sky-700 font-bold">GPIO 18</span>
+                        </div>
+                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-blue-600">OLED SPI</span> (MOSI)</span>
+                            <span class="text-sky-700 font-bold">GPIO 23</span>
+                        </div>
+                    </div>
+                    <div class="mt-4 p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 rounded-r-md">
+                        <span class="font-bold">Atenção:</span> O pino de DATA do DHT22 requer um resistor <span class="font-mono">Pull-up de 10k $\Omega$</span> conectado ao VCC (3.3V).
+                    </div>
+                </div>
+
+                <!-- SPI vs I2C -->
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-gray-900">🚀 Protocolo de Display: SPI</h3>
+                    <p class="text-gray-600 mb-4">
+                        O projeto usa SPI (Serial Peripheral Interface) para o display, escolhido por sua alta velocidade, o que permite atualizações de tela mais suaves.
+                    </p>
+                    <div class="space-y-2">
+                        <h4 class="font-medium">Vantagens do SPI (Usado)</h4>
+                        <ul class="list-disc list-inside text-gray-600">
+                            <li>Barramento síncrono e *full-duplex*.</li>
+                            <li>Velocidades de transferência muito altas.</li>
+                            <li>Ideal para displays que exigem mais dados.</li>
+                        </ul>
+                        <h4 class="font-medium pt-2">Comparado ao I²C (Alternativa)</h4>
+                        <ul class="list-disc list-inside text-gray-600">
+                            <li>Usa apenas 2 fios (SDA/SCL).</li>
+                            <li>Mais lento, pois o barramento é compartilhado.</li>
+                            <li>Ideal para múltiplos sensores de baixa velocidade.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: Logic -->
+        <section id="logic" class="pt-24 -mt-16">
+            <h2 class="text-3xl font-bold text-gray-900 mb-4">Lógica do Software</h2>
+            <p class="text-lg text-gray-600 mb-8">
+                O *firmware* do ESP32 é responsável por três tarefas principais: rastrear o estado (Máx/Mín), interagir com o usuário (botão) e gerenciar o tempo (o desafio do `delay()`).
+            </p>
+
+            <div class="space-y-8">
+                <!-- Max/Min Logic -->
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-gray-900">📈 Rastreamento de Estado (Máx/Mín)</h3>
+                    <p class="text-gray-600 mb-4">O sistema armazena as variações mais extremas desde o último reset. Um flag `isFirstReading` é usado para inicializar o log com a primeira leitura válida. A cada ciclo, o código compara:</p>
+                    <pre class="bg-gray-100 text-gray-800 p-4 rounded-md overflow-x-auto"><code>// Lógica de atualização a cada leitura
+if (currentTemp_C > maxTemp_C) { maxTemp_C = currentTemp_C; }
+if (currentTemp_C < minTemp_C) { minTemp_C = currentTemp_C; }
+// ... (lógica similar para umidade)</code></pre>
+                </div>
+
+                <!-- Button Logic -->
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-gray-900">⏯️ Interação: Botão de Reset (Pull-up)</h3>
+                    <p class="text-gray-600 mb-4">O botão (GPIO 0) permite ao usuário resetar o log de Máx/Mín. Ele usa o resistor `pull-up` interno do ESP32, o que simplifica o hardware.</p>
+                    <ul class="list-disc list-inside text-gray-600 space-y-2">
+                        <li>**Configuração:** `pinMode(BUTTONPIN, INPUT_PULLUP);`</li>
+                        <li>**Estado Ocioso:** O pino é mantido em nível LÓGICO ALTO (HIGH).</li>
+                        <li>**Acionamento:** Ao pressionar, o botão conecta o pino ao GND, resultando em nível LÓGICO BAIXO (LOW).</li>
+                        <li>**Lógica:** `if (digitalRead(BUTTONPIN) == LOW) { resetMaxMin(); }`</li>
+                    </ul>
+                </div>
+
+                <!-- Delay Challenge -->
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-gray-900">🚧 O Desafio: `delay()` vs. `millis()`</h3>
+                    <p class="text-gray-600 mb-4">O DHT22 exige uma espera de 2 segundos entre leituras. A forma mais simples de fazer isso é com `delay(2000)`, mas isso apresenta um grande problema de design.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="p-4 bg-red-50 border border-red-200 rounded-lg">
+                            <h4 class="font-bold text-red-700">Prática Ruim (Usada): `delay()`</h4>
+                            <p class="text-red-600">`delay(2000);` é uma **função de bloqueio**. Durante 2 segundos, o ESP32 para completamente. Ele não pode ler o botão, atualizar o display ou processar qualquer outra tarefa.</p>
+                        </div>
+                        <div class="p-4 bg-green-50 border border-green-200 rounded-lg">
+                            <h4 class="font-bold text-green-700">Melhor Prática (Solução): `millis()`</h4>
+                            <p class="text-green-600">Usar `millis()` (temporização assíncrona) permite que o `loop()` continue rodando. O código apenas *verifica* se já passaram 2 segundos antes de chamar a leitura do sensor, mantendo o sistema responsivo.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 4: Next Steps -->
+        <section id="next-steps" class="pt-24 -mt-16">
+            <h2 class="text-3xl font-bold text-gray-900 mb-4">Próximos Passos e Escalabilidade</h2>
+            <p class="text-lg text-gray-600 mb-8">
+                Este projeto é uma base sólida. As melhorias óbvias focam em conectividade, persistência de dados e otimização do *firmware*.
+            </p>
+            <div class="space-y-4">
+                <div class="bg-white p-5 rounded-lg shadow-md">
+                    <h3 class="text-lg font-semibold text-sky-700">1. Conectividade Wi-Fi</h3>
+                    <p class="text-gray-600">Utilizar o módulo Wi-Fi do ESP32 para enviar os dados (atuais, máx, mín) para um servidor web local ou uma plataforma de IoT como o Thingspeak.</p>
+                </div>
+                <div class="bg-white p-5 rounded-lg shadow-md">
+                    <h3 class="text-lg font-semibold text-sky-700">2. Persistência de Dados</h3>
+                    <p class="text-gray-600">Salvar os valores Máx/Mín na memória Flash do ESP32 (usando SPIFFS ou a EEPROM virtual) para que o log não seja perdido se o dispositivo for desligado.</p>
+                </div>
+                <div class="bg-white p-5 rounded-lg shadow-md">
+                    <h3 class="text-lg font-semibold text-sky-700">3. Otimização do Firmware</h3>
+                    <p class="text-gray-600">Refatorar o código para substituir o `delay(2000)` pela lógica assíncrona com `millis()`, resolvendo o "desafio principal" e tornando o dispositivo totalmente responsivo.</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="max-w-6xl mx-auto mt-16 mb-8 text-center text-gray-500 text-sm">
+        Projeto interativo gerado para apresentar o Sistema Autônomo de Monitoramento de Temperatura e Umidade, com ESP 32
+.
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // --- State Variables ---
+            let currentTemp_C = 23.5;
+            let currentHumidity = 45.0;
+            let maxTemp_C = -999.0;
+            let minTemp_C = 999.0;
+            let maxHumidity = -999.0;
+            let minHumidity = 999.0;
+            let isFirstReading = true;
+            
+            // --- Chart.js Setup ---
+            const ctx = document.getElementById('realTimeChart').getContext('2d');
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: Array(15).fill(''),
+                    datasets: [
+                        {
+                            label: 'Temperatura (°C)',
+                            data: Array(15).fill(null),
+                            borderColor: 'rgb(2, 132, 199)', // text-sky-600
+                            backgroundColor: 'rgba(2, 132, 199, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            yAxisID: 'yTemp'
+                        },
+                        {
+                            label: 'Umidade (%)',
+                            data: Array(15).fill(null),
+                            borderColor: 'rgb(234, 179, 8)', // text-yellow-500
+                            backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            yAxisID: 'yHumid'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        yTemp: {
+                            type: 'linear',
+                            position: 'left',
+                            beginAtZero: false,
+                            suggestedMin: 15,
+                            suggestedMax: 35,
+                            ticks: {
+                                callback: value => value + '°C'
+                            }
+                        },
+                        yHumid: {
+                            type: 'linear',
+                            position: 'right',
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                callback: value => value + '%'
+                            },
+                            grid: {
+                                drawOnChartArea: false, 
+                            },
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+
+            // --- DOM Elements ---
+            const led = document.getElementById('ledIndicator');
+            const resetButton = document.getElementById('resetButton');
+            const oledLines = {
+                l1: document.getElementById('oled-line-1'),
+                l2: document.getElementById('oled-line-2'),
+                l3: document.getElementById('oled-line-3'),
+                l4: document.getElementById('oled-line-4'),
+                l5: document.getElementById('oled-line-5'),
+            };
+
+            // --- Core Logic Functions ---
+            function flashLED() {
+                led.classList.remove('bg-gray-300');
+                led.classList.add('bg-red-500');
+                setTimeout(() => {
+                    led.classList.remove('bg-red-500');
+                    led.classList.add('bg-gray-300');
+                }, 200); 
+            }
+
+            function simulateReading() {
+                // Simula uma pequena variação nos dados
+                currentTemp_C += (Math.random() - 0.45) * 0.5;
+                currentHumidity += (Math.random() - 0.5) * 2.0;
+
+                // Limita os valores
+                if (currentTemp_C < 10) currentTemp_C = 10;
+                if (currentTemp_C > 40) currentTemp_C = 40;
+                if (currentHumidity < 20) currentHumidity = 20;
+                if (currentHumidity > 80) currentHumidity = 80;
+            }
+
+            function updateMaxMin() {
+                if (isFirstReading) {
+                    maxTemp_C = currentTemp_C;
+                    minTemp_C = currentTemp_C;
+                    maxHumidity = currentHumidity;
+                    minHumidity = currentHumidity;
+                    isFirstReading = false;
+                }
+
+                if (currentTemp_C > maxTemp_C) maxTemp_C = currentTemp_C;
+                if (currentTemp_C < minTemp_C) minTemp_C = currentTemp_C;
+                if (currentHumidity > maxHumidity) maxHumidity = currentHumidity;
+                if (currentHumidity < minHumidity) minHumidity = currentHumidity;
+            }
+
+            function updateDisplay() {
+                oledLines.l2.textContent = `${currentTemp_C.toFixed(1)} C`;
+                oledLines.l3.textContent = `${currentHumidity.toFixed(0)} %`;
+                oledLines.l4.textContent = `MAX: ${maxTemp_C.toFixed(1)}C / ${maxHumidity.toFixed(0)}%`;
+                oledLines.l5.textContent = `MIN: ${minTemp_C.toFixed(1)}C / ${minHumidity.toFixed(0)}%`;
+            }
+
+            function updateChart() {
+                chart.data.labels.push('');
+                chart.data.labels.shift();
+                
+                chart.data.datasets[0].data.push(currentTemp_C.toFixed(1));
+                chart.data.datasets[0].data.shift();
+
+                chart.data.datasets[1].data.push(currentHumidity.toFixed(0));
+                chart.data.datasets[1].data.shift();
+                
+                chart.update('none'); 
+            }
+
+            function resetMaxMin() {
+                isFirstReading = true;
+                updateMaxMin(); 
+                updateDisplay();
+                
+                // Feedback visual do reset
+                oledLines.l1.textContent = "LOG RESETADO!";
+                oledLines.l2.textContent = "";
+                oledLines.l3.textContent = "";
+                setTimeout(() => {
+                    oledLines.l1.textContent = "TEMP. e UMIDADE DHT22";
+                }, 1000);
+            }
+
+            // --- Main Loop (Simulates device loop) ---
+            function mainLoop() {
+                flashLED();
+                simulateReading();
+                updateMaxMin();
+                updateDisplay();
+                updateChart();
+            }
+
+            // --- Event Listeners ---
+            resetButton.addEventListener('click', resetMaxMin);
+
+            // Smooth scrolling for nav links
+            document.querySelectorAll('a.nav-link').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    document.querySelector(this.getAttribute('href')).scrollIntoView({
+                        behavior: 'smooth'
+                    });
+                });
+            });
+
+            // Start the simulation
+            mainLoop(); // Run once immediately
+            setInterval(mainLoop, 2000); // Run every 2 seconds
+        });
+    </script>
+</body>
+</html>
