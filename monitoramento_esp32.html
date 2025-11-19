@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Projeto: Monitoramento ESP32 (DHT22 + SPI)</title>
+    <title>Monitoramento Autônomo (DHT22 + I²C)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,12 +11,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
     <!-- 
     Chosen Palette: Warm Neutral Sky
-    Application Structure Plan: A single-page application with a sticky top navigation (Visão Geral, Arquitetura, Lógica, Próximos Passos). This thematic structure is more user-friendly for web exploration than the original linear slide deck. The "Visão Geral" section will feature an interactive JavaScript-based simulation of the final device (OLED display, live chart, and functional reset button) to create an engaging "wow" factor. "Arquitetura" will use HTML/Tailwind to create a diagram of the pin mappings (as SVG is disallowed) and an interactive tab for protocol comparison. "Lógica" will explain the software concepts (state logging, button interaction, and the delay() challenge). This design prioritizes interactive engagement and comprehension over mirroring the report's structure.
+    Application Structure Plan: A single-page application with a sticky top navigation (Visão Geral, Arquitetura, Lógica, Próximos Passos). This thematic structure is more user-friendly for web exploration than the original linear slide deck. The "Visão Geral" section will feature an interactive JavaScript-based simulation of the final device (OLED display, live chart, and functional reset button) to create an engaging "wow" factor. "Arquitetura" will use HTML/Tailwind to create a diagram of the pin mappings (as SVG is disallowed) and an interactive tab for protocol comparison. "Lógica" will explain the software concepts (state logging, button interaction, and the challenge of expanding to new sensors/actuators). This design prioritiza interactive engagement and comprehension over mirroring the report's structure.
     Visualization & Content Choices:
     - [Project Simulation -> Goal: Inform/Engage -> Method: JS + HTML/CSS Simulation + Chart.js Line Chart -> Interaction: Live data updates via setInterval(), button click -> Justification: Translates the hardware project into a tangible web experience.]
     - [Pin Mapping -> Goal: Organize -> Method: HTML/Tailwind Diagram -> Interaction: Static visual -> Justification: Replaces a static image/SVG with structured HTML as per constraints.]
-    - [SPI vs I²C -> Goal: Compare -> Method: JS-powered Tabs -> Interaction: Click to toggle content -> Justification: Interactive comparison of technical concepts.]
-    - [delay() vs millis() -> Goal: Compare -> Method: Side-by-side text blocks -> Interaction: Static comparison -> Justification: Clearly highlights a key technical challenge from the report.]
+    - [I²C vs SPI -> Goal: Compare -> Method: JS-powered Tabs -> Interaction: Click to toggle content -> Justification: Interactive comparison of technical concepts.]
+    - [Automation/Actuators -> Goal: Discuss Expansion -> Method: Side-by-side comparison of passive vs active monitoring -> Justification: Focuses on the new user request.]
     CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.
     -->
     <style>
@@ -48,7 +48,7 @@
         <nav class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-16">
                 <div class="flex-shrink-0">
-                    <span class="text-xl font-bold text-sky-700">Projeto ESP32</span>
+                    <span class="text-xl font-bold text-sky-700">Monitoramento Autônomo</span>
                 </div>
                 <div class="hidden md:block">
                     <div class="ml-10 flex items-baseline space-x-4">
@@ -69,7 +69,7 @@
         <section id="overview" class="pt-16 -mt-16">
             <h1 class="text-4xl font-bold text-gray-900 mb-4">Monitoramento Ambiental Avançado com ESP32</h1>
             <p class="text-lg text-gray-600 mb-8">
-                Esta aplicação explora um projeto de sistema de medição de Temperatura e Umidade. O dispositivo físico usa um sensor DHT22, um display OLED (via SPI) e um botão de reset para registrar os valores máximos e mínimos. Abaixo, você pode interagir com um simulador de software que replica o comportamento e a lógica do dispositivo final.
+                Esta aplicação explora um projeto de sistema de medição de Temperatura e Umidade. O dispositivo físico usa um sensor DHT22, um display OLED (via **I²C**) e um botão de reset para registrar os valores máximos e mínimos. Abaixo, você pode interagir com um simulador de software que replica o comportamento e a lógica do dispositivo final.
             </p>
 
             <!-- Simulator -->
@@ -116,7 +116,7 @@
         <section id="architecture" class="pt-24 -mt-16">
             <h2 class="text-3xl font-bold text-gray-900 mb-4">Arquitetura de Hardware</h2>
             <p class="text-lg text-gray-600 mb-8">
-                A escolha dos componentes e sua conexão definem a performance do sistema. O projeto utiliza o ESP32 por sua alta capacidade de processamento. Esta seção detalha o mapeamento de pinos e o protocolo de comunicação SPI utilizado.
+                A escolha dos componentes e sua conexão definem a performance do sistema. O projeto utiliza o ESP32 por sua alta capacidade de processamento. Esta seção detalha o mapeamento de pinos e o protocolo de comunicação **I²C** utilizado.
             </p>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -130,32 +130,31 @@
                         </div>
                         <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
                             <span><span class="font-bold text-red-600">LED</span> (Anodo)</span>
-                            <span class="text-sky-700 font-bold">GPIO 2</span>
+                            <span class="text-sky-700 font-bold">GPIO 15</span>
                         </div>
                         <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
                             <span><span class="font-bold text-red-600">Botão</span> (Saída)</span>
-                            <span class="text-sky-700 font-bold">GPIO 0</span>
+                            <span class="text-sky-700 font-bold">GPIO 23</span>
                         </div>
                         <div class="w-full h-px bg-gray-300 my-3"></div>
+                        <!-- I2C PINS -->
                         <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
-                            <span><span class="font-bold text-blue-600">OLED SPI</span> (CS)</span>
-                            <span class="text-sky-700 font-bold">GPIO 16</span>
+                            <span><span class="font-bold text-blue-600">OLED / I²C</span> (SDA - Data)</span>
+                            <span class="text-sky-700 font-bold">GPIO 21</span>
                         </div>
                         <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
-                            <span><span class="font-bold text-blue-600">OLED SPI</span> (DC)</span>
-                            <span class="text-sky-700 font-bold">GPIO 17</span>
+                            <span><span class="font-bold text-blue-600">OLED / I²C</span> (SCL - Clock)</span>
+                            <span class="text-sky-700 font-bold">GPIO 22</span>
                         </div>
-                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
-                            <span><span class="font-bold text-blue-600">OLED SPI</span> (RES)</span>
-                            <span class="text-sky-700 font-bold">GPIO 5</span>
+                        <!-- Actuator Pin -->
+                         <div class="font-mono p-3 bg-green-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-green-700">Relé / Carga</span> (Acionamento)</span>
+                            <span class="text-sky-700 font-bold">GPIO 19</span>
                         </div>
-                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
-                            <span><span class="font-bold text-blue-600">OLED SPI</span> (CLK)</span>
-                            <span class="text-sky-700 font-bold">GPIO 18</span>
-                        </div>
-                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
-                            <span><span class="font-bold text-blue-600">OLED SPI</span> (MOSI)</span>
-                            <span class="text-sky-700 font-bold">GPIO 23</span>
+                        <!-- Analog Input Pin -->
+                        <div class="font-mono p-3 bg-yellow-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-yellow-700">Vibração</span> (Entrada Analógica)</span>
+                            <span class="text-sky-700 font-bold">GPIO 36 (ADC1_CH0)</span>
                         </div>
                     </div>
                     <div class="mt-4 p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 rounded-r-md">
@@ -163,25 +162,22 @@
                     </div>
                 </div>
 
-                <!-- SPI vs I2C -->
+                <!-- I2C Protocol Focus -->
                 <div class="bg-white p-6 rounded-lg shadow-lg">
-                    <h3 class="text-xl font-semibold mb-4 text-gray-900">🚀 Protocolo de Display: SPI</h3>
+                    <h3 class="text-xl font-semibold mb-4 text-gray-900">🔗 Protocolo de Barramento: I²C</h3>
                     <p class="text-gray-600 mb-4">
-                        O projeto usa SPI (Serial Peripheral Interface) para o display, escolhido por sua alta velocidade, o que permite atualizações de tela mais suaves.
+                        O barramento I²C (Inter-Integrated Circuit) é crucial para a escalabilidade, permitindo que o ESP32 se comunique com o display OLED e novos sensores (como o sensor de pressão) usando apenas dois pinos.
                     </p>
                     <div class="space-y-2">
-                        <h4 class="font-medium">Vantagens do SPI (Usado)</h4>
+                        <h4 class="font-medium">Benefícios do I²C para Expansão</h4>
                         <ul class="list-disc list-inside text-gray-600">
-                            <li>Barramento síncrono e *full-duplex*.</li>
-                            <li>Velocidades de transferência muito altas.</li>
-                            <li>Ideal para displays que exigem mais dados.</li>
+                            <li>**Fiação Mínima:** Utiliza apenas 2 pinos (SDA - Data e SCL - Clock).</li>
+                            <li>**Escalabilidade:** Permite conectar múltiplos dispositivos (cada um com um endereço único) ao mesmo par de pinos.</li>
+                            <li>**Aplicações:** Ideal para dispositivos de baixa e média velocidade, como displays e a maioria dos sensores ambientais.</li>
                         </ul>
-                        <h4 class="font-medium pt-2">Comparado ao I²C (Alternativa)</h4>
-                        <ul class="list-disc list-inside text-gray-600">
-                            <li>Usa apenas 2 fios (SDA/SCL).</li>
-                            <li>Mais lento, pois o barramento é compartilhado.</li>
-                            <li>Ideal para múltiplos sensores de baixa velocidade.</li>
-                        </ul>
+                        <div class="mt-4 p-3 bg-blue-100 border-l-4 border-blue-500 text-blue-800 rounded-r-md">
+                            <span class="font-bold">Nota:</span> Um sensor de pressão como o BMP280, que usa I²C, pode ser adicionado diretamente aos pinos **GPIO 21** e **GPIO 22**.
+                        </div>
                     </div>
                 </div>
             </div>
@@ -191,7 +187,7 @@
         <section id="logic" class="pt-24 -mt-16">
             <h2 class="text-3xl font-bold text-gray-900 mb-4">Lógica do Software</h2>
             <p class="text-lg text-gray-600 mb-8">
-                O *firmware* do ESP32 é responsável por três tarefas principais: rastrear o estado (Máx/Mín), interagir com o usuário (botão) e gerenciar o tempo (o desafio do `delay()`).
+                O *firmware* do ESP32 é responsável por três tarefas principais: rastrear o estado (Máx/Mín), interagir com o usuário (botão) e, agora, expandir para um controle de processo mais complexo.
             </p>
 
             <div class="space-y-8">
@@ -208,7 +204,7 @@ if (currentTemp_C < minTemp_C) { minTemp_C = currentTemp_C; }
                 <!-- Button Logic -->
                 <div class="bg-white p-6 rounded-lg shadow-lg">
                     <h3 class="text-xl font-semibold mb-4 text-gray-900">⏯️ Interação: Botão de Reset (Pull-up)</h3>
-                    <p class="text-gray-600 mb-4">O botão (GPIO 0) permite ao usuário resetar o log de Máx/Mín. Ele usa o resistor `pull-up` interno do ESP32, o que simplifica o hardware.</p>
+                    <p class="text-gray-600 mb-4">O botão (GPIO 23) permite ao usuário resetar o log de Máx/Mín. Ele usa o resistor `pull-up` interno do ESP32, o que simplifica o hardware.</p>
                     <ul class="list-disc list-inside text-gray-600 space-y-2">
                         <li>**Configuração:** `pinMode(BUTTONPIN, INPUT_PULLUP);`</li>
                         <li>**Estado Ocioso:** O pino é mantido em nível LÓGICO ALTO (HIGH).</li>
@@ -217,18 +213,18 @@ if (currentTemp_C < minTemp_C) { minTemp_C = currentTemp_C; }
                     </ul>
                 </div>
 
-                <!-- Delay Challenge -->
+                <!-- NEW: Automation & Actuation -->
                 <div class="bg-white p-6 rounded-lg shadow-lg">
-                    <h3 class="text-xl font-semibold mb-4 text-gray-900">🚧 O Desafio: `delay()` vs. `millis()`</h3>
-                    <p class="text-gray-600 mb-4">O DHT22 exige uma espera de 2 segundos entre leituras. A forma mais simples de fazer isso é com `delay(2000)`, mas isso apresenta um grande problema de design.</p>
+                    <h3 class="text-xl font-semibold mb-4 text-gray-900">🚀 Expansão: Adição de Sensores e Acionamento de Cargas</h3>
+                    <p class="text-gray-600 mb-4">O sistema de monitoramento pode evoluir para um sistema de controle de processo, adicionando novos sensores para uma visão holística e atuadores para intervenção automática.</p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="p-4 bg-red-50 border border-red-200 rounded-lg">
-                            <h4 class="font-bold text-red-700">Prática Ruim (Usada): `delay()`</h4>
-                            <p class="text-red-600">`delay(2000);` é uma **função de bloqueio**. Durante 2 segundos, o ESP32 para completamente. Ele não pode ler o botão, atualizar o display ou processar qualquer outra tarefa.</p>
+                        <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            <h4 class="font-bold text-blue-700">Sensores Complementares (Entrada)</h4>
+                            <p class="text-blue-600">A inclusão de medições como **Pressão** (via I²C, ex: BMP280) e **Vibração** (via entrada analógica) transforma a aplicação, permitindo a detecção de anomalias em tempo real.</p>
                         </div>
-                        <div class="p-4 bg-green-50 border border-green-200 rounded-lg">
-                            <h4 class="font-bold text-green-700">Melhor Prática (Solução): `millis()`</h4>
-                            <p class="text-green-600">Usar `millis()` (temporização assíncrona) permite que o `loop()` continue rodando. O código apenas *verifica* se já passaram 2 segundos antes de chamar a leitura do sensor, mantendo o sistema responsivo.</p>
+                        <div class="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                            <h4 class="font-bold text-purple-700">Acionamento de Cargas (Saída)</h4>
+                            <p class="text-purple-600">Com relés, o ESP32 pode controlar dispositivos externos de alta potência, como **Válvulas Solenoides** ou **Ventiladores**, para automatizar a correção de condições críticas (ex: ligar ventilador se Temp > $30^{\circ} \text{C}$).</p>
                         </div>
                     </div>
                 </div>
@@ -251,8 +247,8 @@ if (currentTemp_C < minTemp_C) { minTemp_C = currentTemp_C; }
                     <p class="text-gray-600">Salvar os valores Máx/Mín na memória Flash do ESP32 (usando SPIFFS ou a EEPROM virtual) para que o log não seja perdido se o dispositivo for desligado.</p>
                 </div>
                 <div class="bg-white p-5 rounded-lg shadow-md">
-                    <h3 class="text-lg font-semibold text-sky-700">3. Otimização do Firmware</h3>
-                    <p class="text-gray-600">Refatorar o código para substituir o `delay(2000)` pela lógica assíncrona com `millis()`, resolvendo o "desafio principal" e tornando o dispositivo totalmente responsivo.</p>
+                    <h3 class="text-lg font-semibold text-sky-700">3. Implementação de Automação</h3>
+                    <p class="text-gray-600">Integrar relés e solenoides para controlar cargas (como válvulas ou ventiladores) com base nos dados dos sensores (T/H, Pressão, Vibração), estabelecendo um sistema de controle de processo completo.</p>
                 </div>
             </div>
         </section>
@@ -261,8 +257,9 @@ if (currentTemp_C < minTemp_C) { minTemp_C = currentTemp_C; }
 
     <!-- Footer -->
     <footer class="max-w-6xl mx-auto mt-16 mb-8 text-center text-gray-500 text-sm">
-        Projeto interativo gerado para apresentar o Sistema Autônomo de Monitoramento de Temperatura e Umidade, com ESP 32
-.
+        IFCE Maracanaú<br>
+        Bacharelado em Engenharia de Controle e Automação<br>
+        William Belchior
     </footer>
 
     <script>
