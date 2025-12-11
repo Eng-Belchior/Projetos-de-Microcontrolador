@@ -35,7 +35,7 @@ const float SET_POINT = 28.0;   // Temperatura para LIGAR o ventilador
 const float HIST_LOWER = 27.5;  // Temperatura para DESLIGAR o ventilador (Histerese)
 
 // =================================================================
-// 🚨 CONFIGURAÇÕES ESSENCIAIS - PREENCHA AQUI 🚨
+// 🚨 CONFIGURAÇÕES ESSENCIAIS 
 // =================================================================
 
 // 1. Variáveis de Rede WiFi
@@ -48,7 +48,7 @@ const char* password = "INSIRA_SUA_SENHA_WIFI";
 const char* FIREBASE_HOST = "controle-de-atuadores-e-iot-default-rtdb.firebaseio.com";
 
 // =================================================================
-// 🚀 INÍCIO DO CÓDIGO - NÃO PRECISA ALTERAR ABAIXO 🚀
+// 🚀 INÍCIO DO CÓDIGO 
 // =================================================================
 
 // --- Variáveis de Controle de Tempo (Melhor que usar delay()) ---
