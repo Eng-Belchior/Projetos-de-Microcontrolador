@@ -1,0 +1,361 @@
+#include <Arduino.h>
+
+// --- Bibliotecas para Sensores e Atuadores ---
+#include <DHT.h>
+#include <Wire.h> 
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+// --- Bibliotecas de Comunicação (IoT) ---
+#include <WiFi.h>
+#include <HTTPClient.h> // Usada para enviar dados via REST/Firebase
+
+// --- Configurações do Sensor DHT22 ---
+#define DHTPIN 4        // GPIO 4 (Pino de dados do DHT22)
+#define DHTTYPE DHT22   // Define o tipo de sensor
+DHT dht(DHTPIN, DHTTYPE);
+
+// --- Configurações dos Componentes de I/O Adicionais ---
+#define BUTTON_PIN 23   // GPIO 23 para o Botão (Input)
+#define LED_READ_PIN 15   // GPIO 15 para o LED de Sinalização de Leitura (Output)
+
+// --- Configurações do Display OLED I2C (128x64) ---
+#define SCREEN_WIDTH 128    // Largura do display OLED
+#define SCREEN_HEIGHT 64    // Altura do display OLED
+#define OLED_RESET -1       // Pino de reset 
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+// I2C Pinos: SDA = GPIO 21, SCL = GPIO 22
+
+// --- Configuração dos Atuadores (Relés) ---
+#define LAMP_PIN 19   // GPIO 19 para Relé 1 (Lâmpada - Carga Monitorada/Aquecimento)
+#define FAN_PIN 18    // GPIO 18 para Relé 2 (Ventilador - Dispositivo de Proteção/Resfriamento)
+
+// --- Variáveis de Controle de Processo ---
+const float SET_POINT = 28.0;   // Temperatura para LIGAR o ventilador
+const float HIST_LOWER = 27.5;  // Temperatura para DESLIGAR o ventilador (Histerese)
+
+// =================================================================
+// 🚨 CONFIGURAÇÕES ESSENCIAIS - PREENCHA AQUI 🚨
+// =================================================================
+
+// 1. Variáveis de Rede WiFi
+const char* ssid = "INSIRA_SEU_WIFI_SSID";
+const char* password = "INSIRA_SUA_SENHA_WIFI";
+
+// 2. Configuração do Endpoint Firebase REST API
+// SUBSTITUA PELA URL DO SEU FIREBASE REALTIME DATABASE (EX: meuprojeto-default-rtdb.firebaseio.com)
+// ** ATENÇÃO: Use a mesma URL do seu dashboard HTML **
+const char* FIREBASE_HOST = "controle-de-atuadores-e-iot-default-rtdb.firebaseio.com";
+
+// =================================================================
+// 🚀 INÍCIO DO CÓDIGO - NÃO PRECISA ALTERAR ABAIXO 🚀
+// =================================================================
+
+// --- Variáveis de Controle de Tempo (Melhor que usar delay()) ---
+unsigned long previousReadingMillis = 0;
+const long readingInterval = 2000; // Intervalo de leitura automática (2 segundos)
+unsigned long previousLogMillis = 0;
+const long historicalLogInterval = 300000; // Intervalo para log histórico (5 minutos)
+
+// --- Variáveis de Estado ---
+float currentTemp_C = 0.0;
+float currentHumidity = 0.0;
+bool isFanOn = false;
+bool isLampOn = true; // A lâmpada permanece LIGADA como fonte de calor monitorada
+
+// Variável de estado do botão para evitar leituras múltiplas (debounce simples)
+int lastButtonState = HIGH; 
+
+// Protótipo da nova função unificada de ciclo
+void executeCycle(bool isManualRead); 
+
+// =================================================================
+// FUNÇÕES DE COMUNICAÇÃO (FIREBASE VIA REST)
+// =================================================================
+
+// Função para gerar o payload JSON do estado atual
+String generateJsonPayload(float temp, float humid, bool fanState, bool lampState) {
+    String payload = "{";
+    payload += "\"temperatura_celsius\": " + String(temp, 2) + ",";
+    payload += "\"umidade_relativa_percentual\": " + String(humid, 1) + ",";
+    payload += "\"ventilador_status\": \"";
+    payload += (fanState ? "LIGADO" : "DESLIGADO");
+    payload += "\",";
+    payload += "\"lampada_status\": \"";
+    payload += (lampState ? "LIGADA" : "DESLIGADA");
+    payload += "\",";
+    payload += "\"tempo_ciclo_ms\": " + String(millis()); 
+    payload += "}";
+    return payload;
+}
+
+/**
+ * Envia o payload JSON para o Firebase Realtime Database usando a API REST (HTTPClient).
+ * @param dataType A chave/caminho no Firebase (ex: "realtime_state").
+ * @param payload A string JSON contendo os dados.
+ */
+void sendDataToFirestore(const String& dataType, const String& payload) {
+    if (WiFi.status() == WL_CONNECTED) {
+        
+        // Constrói a URL completa: host + path (dataType) + extensão JSON
+        String url = "https://"; 
+        url += FIREBASE_HOST;
+        url += "/";
+        url += dataType; // Ex: /realtime_state ou /historical_log
+        url += ".json"; // Necessário para a API REST do Firebase
+
+        Serial.print("📡 Enviando Log para: ");
+        Serial.println(url);
+
+        HTTPClient http;
+        http.begin(url); 
+        http.addHeader("Content-Type", "application/json");
+        
+        int httpResponseCode;
+
+        // 💡 CORREÇÃO CRÍTICA: 
+        if (dataType == "realtime_state" || dataType == "manual_state") {
+            // Usa PUT para SOBRESCREVER o nó. Isso garante que a URL do HTML não fique vazia.
+            Serial.println("  -> Usando PUT para Realtime State.");
+            httpResponseCode = http.PUT(payload);
+        } else {
+            // Usa POST para ADICIONAR um registro (com ID único) no log histórico.
+            Serial.println("  -> Usando POST para Log Histórico.");
+            httpResponseCode = http.POST(payload);
+        }
+
+
+        if (httpResponseCode > 0) {
+            Serial.print("✅ HTTP Code: ");
+            Serial.println(httpResponseCode);
+        } else {
+            Serial.print("❌ Erro no envio HTTP. Código: ");
+            Serial.println(httpResponseCode);
+        }
+        
+        http.end();
+        
+    } else {
+        Serial.println("❌ WiFi Desconectado. Não foi possível enviar dados.");
+    }
+}
+
+
+// =================================================================
+// FUNÇÕES DE CONTROLE DE HARDWARE
+// =================================================================
+
+// Função para inicializar o WiFi
+void setupWiFi() {
+    WiFi.begin(ssid, password);
+    Serial.print("Conectando ao WiFi...");
+    
+    // Tenta conectar por 20 segundos
+    int count = 0;
+    while (WiFi.status() != WL_CONNECTED && count < 40) {
+        delay(500);
+        Serial.print(".");
+        count++;
+    }
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\n✅ Conectado!");
+        Serial.print("IP: ");
+        Serial.println(WiFi.localIP());
+    } else {
+        Serial.println("\n❌ Falha na Conexão WiFi. Continuando offline.");
+    }
+}
+
+// Função de Leitura do DHT22
+void readSensor() {
+    float h = dht.readHumidity();
+    float t = dht.readTemperature(); // Lê em Celsius
+
+    if (isnan(h) || isnan(t)) {
+        Serial.println("❌ Erro ao ler o sensor DHT22!");
+        return;
+    }
+
+    currentHumidity = h;
+    currentTemp_C = t;
+}
+
+// Implementa a Lógica de Controle ON/OFF com Histerese
+void controlActuators() {
+    
+    // 1. Controle do Ventilador (Proteção Térmica)
+    if (currentTemp_C >= SET_POINT) {
+        isFanOn = true; // LIGA o ventilador
+    } else if (currentTemp_C <= HIST_LOWER) {
+        isFanOn = false; // DESLIGA o ventilador (evita o 'chattering')
+    }
+    
+    // 2. Acionamento dos Relés (Saídas Digitais)
+    // Nota: A maioria dos módulos relé ativam com LOW (lógica invertida). 
+    // Ajuste se o seu módulo precisar de HIGH para LIGAR.
+    
+    // Lâmpada (Fonte de Aquecimento/Carga Monitorada) - Sempre LIGADA
+    digitalWrite(LAMP_PIN, isLampOn ? HIGH : LOW);
+    
+    // Ventilador (Dispositivo de Proteção)
+    digitalWrite(FAN_PIN, isFanOn ? HIGH : LOW);
+    
+    // Log no Serial
+    Serial.print("Temp: ");
+    Serial.print(currentTemp_C);
+    Serial.print("\u00B0C | Humid: ");
+    Serial.print(currentHumidity);
+    Serial.print("% | Lâmpada: ");
+    Serial.print(isLampOn ? "ON" : "OFF");
+    Serial.print(" | Ventilador: ");
+    Serial.println(isFanOn ? "ON" : "OFF");
+}
+
+// Função para atualizar o display OLED
+void updateOLED() {
+    display.clearDisplay();
+    display.setTextColor(WHITE);
+    
+    // --- 1. Linha Superior: Status e Setpoint (Tamanho 1) ---
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+
+    // Exibe o Setpoint no canto superior esquerdo
+    display.print("SP:");
+    display.print(SET_POINT, 1);
+    display.print("\u00B0C");
+
+    // Exibe o Status da Rede no canto superior direito
+    display.setCursor(70, 0);
+    if (WiFi.status() == WL_CONNECTED) {
+        display.print("WIFI OK");
+    } else {
+        display.print("WIFI OFF");
+    }
+
+
+    // --- 2. Linha Principal: Temperatura Atual (Tamanho 3 - Bem Grande) ---
+    // Começa na linha 16 (abaixo da linha 0)
+    display.setTextSize(3);
+    display.setCursor(0, 16); 
+    display.print(currentTemp_C, 1);
+    display.print("\u00B0C"); // O caracter especial de grau pode ser necessário para a fonte 3
+    
+    // Para caber na tela, movemos a umidade para o lado direito na mesma linha
+    // Verifica se a temperatura não é muito grande para dar espaço à umidade
+    if (currentTemp_C < 100.0) {
+        display.setTextSize(1); // Voltamos ao tamanho 1 para a Umidade
+        display.setCursor(95, 24); // Posição calculada para ficar alinhada com a T
+        display.print(currentHumidity, 0);
+        display.print("%");
+    }
+
+
+    // --- 3. Linha Inferior: Atuadores e Leitura (Tamanho 2) ---
+    // Começa na linha 48 (última área livre)
+    display.setTextSize(2);
+    display.setCursor(0, 48);
+    
+    // Lâmpada (LMP)
+    display.print("LMP:");
+    display.print(isLampOn ? "ON" : "OFF");
+    
+    // Ventilador (FAN) - Posição ajustada para caber
+    display.setCursor(80, 48);
+    display.print("FAN:");
+    display.print(isFanOn ? "ON" : "OFF");
+    
+    display.display();
+}
+
+/**
+ * Função unificada que executa o ciclo completo de leitura, controle, display e log.
+ * isManualRead: true se for acionada pelo botão, false se for automática.
+ */
+void executeCycle(bool isManualRead) {
+    // 1. Sinaliza o LED 
+    digitalWrite(LED_READ_PIN, HIGH);
+    
+    // 2. Leitura e Lógica
+    readSensor();
+    controlActuators();
+    
+    // 3. Atualização do Display
+    updateOLED();
+    
+    // 4. Envio de Log em Tempo Real
+    String logType = isManualRead ? "manual_state" : "realtime_state";
+    String realtimePayload = generateJsonPayload(currentTemp_C, currentHumidity, isFanOn, isLampOn);
+    sendDataToFirestore(logType, realtimePayload);
+    
+    // 5. Desliga o LED após o ciclo 
+    digitalWrite(LED_READ_PIN, LOW);
+}
+
+
+// =================================================================
+// ARDUINO SETUP E LOOP
+// =================================================================
+
+void setup() {
+    Serial.begin(115200);
+    
+    // 1. Inicializa Pinos de Saída (Atuadores e LED) 
+    pinMode(LAMP_PIN, OUTPUT);
+    pinMode(FAN_PIN, OUTPUT);
+    pinMode(LED_READ_PIN, OUTPUT); // LED de Sinalização
+    
+    // 2. Inicializa Pinos de Entrada (Botão) 
+    pinMode(BUTTON_PIN, INPUT_PULLUP); // Botão usa pull-up interno
+
+    // Garante que o ventilador e o LED comecem DESLIGADOS
+    digitalWrite(LAMP_PIN, isLampOn ? HIGH : LOW);
+    digitalWrite(FAN_PIN, LOW);
+    digitalWrite(LED_READ_PIN, LOW);
+    
+    // 3. Inicializa Sensor e Display
+    dht.begin();
+    
+    if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Endereço I2C 0x3C (comum)
+        Serial.println(F("❌ Falha no display SSD1306"));
+    } else {
+        Serial.println("✅ Display OLED OK!");
+        display.display();
+        delay(2000);
+    }
+    
+    // 4. Inicializa WiFi (Conexão IoT)
+    setupWiFi();
+    
+    Serial.println("Setup Completo. Iniciando Loop...");
+}
+
+void loop() {
+    unsigned long currentMillis = millis();
+
+    // --- 1. Lógica do Botão ---
+    int currentButtonState = digitalRead(BUTTON_PIN);
+
+    // Detecta a borda de descida (botão sendo pressionado)
+    if (currentButtonState == LOW && lastButtonState == HIGH) {
+        Serial.println("Botao pressionado! Forcando ciclo de leitura...");
+        executeCycle(true); // Executa o ciclo manualmente
+        previousReadingMillis = currentMillis; // Reseta o timer automático
+    }
+    lastButtonState = currentButtonState;
+
+    // --- 2. Execução Automática do Ciclo ---
+    if (currentMillis - previousReadingMillis >= readingInterval) {
+        previousReadingMillis = currentMillis;
+        executeCycle(false); // Executa o ciclo automaticamente
+    }
+    
+    // --- 3. Envio de Log Histórico ---
+    if (currentMillis - previousLogMillis >= historicalLogInterval) {
+        previousLogMillis = currentMillis;
+        // Não precisamos de um ciclo completo para o histórico, apenas enviamos os dados atuais
+        String historicalPayload = generateJsonPayload(currentTemp_C, currentHumidity, isFanOn, isLampOn);
+        sendDataToFirestore("historical_log", historicalPayload);
+    }
+}
