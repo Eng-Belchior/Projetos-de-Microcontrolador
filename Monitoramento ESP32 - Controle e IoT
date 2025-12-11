@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoramento Autônomo (DHT22 + I²C)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- 
+    Chosen Palette: Warm Neutral Sky
+    UPDATE 1: Added Firebase/Firestore integration (simulated cloud database).
+    UPDATE 2: Added control logic simulation (Lamp ON = Heat Source, Fan ON = Cooling Actuator) with a temperature threshold.
+    The simulation now reflects a full IoT control loop: SENSE (T/H) -> DECIDE (Logic) -> ACT (Relays) -> PERSIST (Firestore).
+    -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* bg-slate-50 */
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 250px;
+            max-height: 300px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 300px;
+                max-height: 350px;
+            }
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <!-- Header & Navigation -->
+    <header class="bg-white/90 backdrop-blur-md shadow-sm sticky top-0 z-50">
+        <nav class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex-shrink-0">
+                    <span class="text-xl font-bold text-sky-700">Monitoramento Autônomo</span>
+                </div>
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-4">
+                        <a href="#overview" class="nav-link text-gray-600 hover:text-sky-700 px-3 py-2 rounded-md text-sm font-medium">Visão Geral</a>
+                        <a href="#architecture" class="nav-link text-gray-600 hover:text-sky-700 px-3 py-2 rounded-md text-sm font-medium">Arquitetura</a>
+                        <a href="#logic" class="nav-link text-gray-600 hover:text-sky-700 px-3 py-2 rounded-md text-sm font-medium">Lógica do Software</a>
+                        <a href="#next-steps" class="nav-link text-gray-600 hover:text-sky-700 px-3 py-2 rounded-md text-sm font-medium">Persistência e IoT</a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
+
+        <!-- Section 1: Overview & Simulator -->
+        <section id="overview" class="pt-16 -mt-16">
+            <h1 class="text-4xl font-bold text-gray-900 mb-4">Monitoramento e Controle de Processos com ESP32 (IoT)</h1>
+            <p class="text-lg text-gray-600 mb-8">
+                O sistema evoluiu de um monitor local para um sistema de controle de processo completo, com envio de dados para análise sazonal e acionamento automático de cargas (Lâmpada e Ventilador). O simulador abaixo reflete o novo ciclo: Leitura &rarr; Lógica de Controle &rarr; Atuação &rarr; Persistência de Dados.
+            </p>
+
+            <!-- Simulator -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                
+                <!-- Left Column: Simulated Display & Controls -->
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-900">Simulador do Dispositivo de Controle</h2>
+                    
+                    <!-- Simulated OLED Display -->
+                    <div class="bg-gray-900 text-white p-4 rounded-md border-4 border-gray-700" style="font-family: 'Courier New', monospace;">
+                        <div id="oled-line-1" class="text-xs text-yellow-300">MODO: CONTROLE AUTOMÁTICO</div>
+                        <div class="w-full h-px bg-gray-600 my-1"></div>
+                        <div id="oled-line-2" class="text-2xl">...</div>
+                        <div id="oled-line-3" class="text-2xl">...</div>
+                        <div id="oled-line-4" class="text-xs mt-2">FAN: [OFF] / LAMP: [ON]</div>
+                        <div id="oled-line-5" class="text-xs">LOG: OK - $29.0^{\circ}C$ Set Point</div>
+                    </div>
+
+                    <!-- Controls and Status -->
+                    <div class="mt-6 space-y-4">
+                        <div class="flex items-center space-x-4">
+                            <button id="resetButton" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                                Resetar Log Máx/Min
+                            </button>
+                            <div class="flex items-center space-x-2">
+                                <div id="ledIndicator" class="w-4 h-4 bg-gray-300 rounded-full transition-colors duration-100"></div>
+                                <span class="text-sm text-gray-500">Leitura/Escrita</span>
+                            </div>
+                        </div>
+
+                        <!-- Relay Status -->
+                        <div class="bg-slate-100 p-3 rounded-lg flex justify-between items-center text-sm font-semibold">
+                            <span>Status dos Relés (GPIO 19 e 18)</span>
+                            <div class="flex space-x-4">
+                                <span id="lampStatus" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                    LÂMPADA (R1): ON
+                                </span>
+                                <span id="fanStatus" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                    VENTILADOR (R2): OFF
+                                </span>
+                            </div>
+                        </div>
+                         <!-- Firebase Status -->
+                        <div id="firebase-status" class="text-xs p-2 bg-yellow-100 text-yellow-800 rounded-md">
+                            Conectando ao Firestore...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Live Chart -->
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-900">Log de Dados em Tempo Real (Simulado IoT)</h2>
+                    <p class="text-sm text-gray-600 mb-4">O gráfico abaixo reflete os dados enviados ao banco de dados Firestore a cada 2 segundos. O Ventilador **LIGA acima de $35.0^{\circ} \text{C}$** e **DESLIGA em $25.0^{\circ} \text{C}$**.</p>
+                    <div class="chart-container">
+                        <canvas id="realTimeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: Architecture -->
+        <section id="architecture" class="pt-24 -mt-16">
+            <h2 class="text-3xl font-bold text-gray-900 mb-4">Arquitetura de Hardware e Controle (Novo)</h2>
+            <p class="text-lg text-gray-600 mb-8">
+                A arquitetura foi expandida para incluir um módulo relé de 4 canais, implementando um sistema de controle de realimentação simples.
+            </p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- Pin Mapping Diagram (HTML/Tailwind) -->
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-gray-900">📌 Mapeamento de Pinos (ESP32)</h3>
+                    <div class="space-y-3">
+                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-red-600">DHT22</span> (Data)</span>
+                            <span class="text-sky-700 font-bold">GPIO 4</span>
+                        </div>
+                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-red-600">Botão</span> (Saída)</span>
+                            <span class="text-sky-700 font-bold">GPIO 23</span>
+                        </div>
+                        <div class="w-full h-px bg-gray-300 my-3"></div>
+                        <!-- I2C PINS -->
+                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-blue-600">OLED / I²C</span> (SDA - Data)</span>
+                            <span class="text-sky-700 font-bold">GPIO 21</span>
+                        </div>
+                        <div class="font-mono p-3 bg-slate-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-blue-600">OLED / I²C</span> (SCL - Clock)</span>
+                            <span class="text-sky-700 font-bold">GPIO 22</span>
+                        </div>
+                        <div class="w-full h-px bg-gray-300 my-3"></div>
+                        <!-- NEW ACTUATOR PINS -->
+                         <div class="font-mono p-3 bg-green-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-green-700">Relé R1 (Lâmpada)</span> (Acionamento)</span>
+                            <span class="text-sky-700 font-bold">GPIO 19</span>
+                        </div>
+                        <div class="font-mono p-3 bg-green-100 rounded-md flex justify-between items-center">
+                            <span><span class="font-bold text-green-700">Relé R2 (Ventilador)</span> (Acionamento)</span>
+                            <span class="text-sky-700 font-bold">GPIO 18</span>
+                        </div>
+                    </div>
+                    <div class="mt-4 p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 rounded-r-md">
+                        <span class="font-bold">Atenção:</span> Lembre-se de usar transistores ou optoacopladores para isolar o ESP32 dos relés.
+                    </div>
+                </div>
+
+                <!-- I2C Protocol Focus -->
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-gray-900">🔗 Lógica de Controle: ON/OFF (Histerese)</h3>
+                    <p class="text-gray-600 mb-4">
+                        O ventilador opera com uma lógica de **controle ON/OFF**, reagindo a um ponto de ajuste (Set Point).
+                    </p>
+                    <pre class="bg-gray-100 text-gray-800 p-4 rounded-md overflow-x-auto mb-4"><code>// Lógica de Atuação no Firmware
+const float FAN_ON_THRESHOLD = 35.0; // LIGA o ventilador
+const float FAN_OFF_THRESHOLD = 25.0; // DESLIGA o ventilador (Histerese)
+
+if (currentTemp_C >= FAN_ON_THRESHOLD) {
+    // Liga o ventilador para resfriar
+    digitalWrite(FAN_PIN, HIGH); 
+} else if (currentTemp_C <= FAN_OFF_THRESHOLD) {
+    // Desliga o ventilador
+    digitalWrite(FAN_PIN, LOW); 
+}
+// A lâmpada (carga monitorada) permanece LIGADA.
+digitalWrite(LAMP_PIN, HIGH);</code></pre>
+                    <div class="mt-4 p-3 bg-blue-100 border-l-4 border-blue-500 text-blue-800 rounded-r-md">
+                        <span class="font-bold">Histerese:</span> A diferença entre LIGAR ($35.0^{\circ}\text{C}$) e DESLIGAR ($25.0^{\circ}\text{C}$) evita que o ventilador ligue e desligue repetidamente (*chattering*) quando a temperatura estiver próxima do Set Point de $29.0^{\circ}\text{C}$.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: Logic -->
+        <section id="logic" class="pt-24 -mt-16">
+            <h2 class="text-3xl font-bold text-gray-900 mb-4">Lógica de Persistência IoT (Banco de Dados)</h2>
+            <p class="text-lg text-gray-600 mb-8">
+                Para permitir análises sazonais (semanais, mensais), é essencial persistir os dados em um banco de dados na nuvem, como o Firestore. O ESP32 envia:
+            </p>
+
+            <div class="space-y-8">
+                <!-- Real-time Data -->
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-gray-900">📡 Atualização em Tempo Real (Realtime State)</h3>
+                    <p class="text-gray-600 mb-4">O dispositivo envia seu estado atual (T/H, Relés) para um único documento no Firestore. Isso é ideal para o monitoramento imediato do status do sistema.</p>
+                    <pre class="bg-gray-100 text-gray-800 p-4 rounded-md overflow-x-auto"><code>// Documento de Estado em Tempo Real (Atualizado a cada 2s)
+// Caminho: /artifacts/{appId}/users/{userId}/realtime_state/current
+{
+  "tempC": 28.1,
+  "humidity": 45.0,
+  "timestamp": 1733604342000,
+  "fanRelayState": true,  // Ligado
+  "lampRelayState": true  // Ligado
+}</code></pre>
+                </div>
+
+                <!-- Historical Data -->
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-gray-900">📊 Log Histórico para Análise Sazonal</h3>
+                    <p class="text-gray-600 mb-4">Para a análise sazonal, um documento é criado a cada 5 ou 10 minutos (na simulação, 10s) em uma coleção separada. Isso gera a série temporal necessária para gráficos de longo prazo.</p>
+                    <pre class="bg-gray-100 text-gray-800 p-4 rounded-md overflow-x-auto"><code>// Coleção de Dados Históricos (Documento adicionado periodicamente)
+// Coleção: /artifacts/{appId}/users/{userId}/historical_log/
+{
+  "time": "2025-12-09T14:30:00Z",
+  "average_tempC": 27.8,
+  "max_tempC": 28.5,
+  "min_tempC": 27.2,
+  "avg_fan_on_time_ratio": 0.45 // 45% do tempo o ventilador esteve ligado
+}</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 4: Next Steps -->
+        <section id="next-steps" class="pt-24 -mt-16">
+            <h2 class="text-3xl font-bold text-gray-900 mb-4">Persistência e IoT</h2>
+            <p class="text-lg text-gray-600 mb-8">
+                Com a lógica implementada, o próximo passo é garantir a robustez da comunicação e a segurança dos dados.
+            </p>
+            <div class="space-y-4">
+                <div class="bg-white p-5 rounded-lg shadow-md">
+                    <h3 class="text-lg font-semibold text-sky-700">1. Otimização de Log (Firmware)</h3>
+                    <p class="text-gray-600">No ESP32 real, use a função `delay()` com cautela. Utilize `millis()` para gerenciar tarefas assíncronas (leitura, controle, envio de dados) sem bloquear o loop principal.</p>
+                </div>
+                <div class="bg-white p-5 rounded-lg shadow-md">
+                    <h3 class="text-lg font-semibold text-sky-700">2. Análise Sazonal</h3>
+                    <p class="text-gray-600">Com o log histórico no Firestore, você pode criar consultas (queries) para agrupar e visualizar a média de temperatura por dia ou por semana, identificando padrões de sazonalidade.</p>
+                </div>
+                <div class="bg-white p-5 rounded-lg shadow-md">
+                    <h3 class="text-lg font-semibold text-sky-700">3. Segurança dos Relés</h3>
+                    <p class="text-gray-600">Use os pinos corretos (GPIO 19 e 18) e certifique-se de que o nível lógico do pino (HIGH/LOW) corresponde à ativação desejada do seu módulo relé (muitos módulos ativam em LOW).</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="max-w-6xl mx-auto mt-16 mb-8 text-center text-gray-500 text-sm">
+        IFCE Maracanaú<br>
+        Bacharelado em Engenharia de Controle e Automação<br>
+        William Belchior
+    </footer>
+
+    <!-- Firebase and Application Logic Script -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Globals (Provided by Canvas Environment) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'esp32-default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        let db, auth;
+        let userId = null;
+        let isAuthReady = false;
+
+        // --- Application State Variables ---
+        let currentTemp_C = 23.5;
+        let currentHumidity = 45.0;
+        let maxTemp_C = -999.0;
+        let minTemp_C = 999.0;
+        let maxHumidity = -999.0;
+        let minHumidity = 999.0;
+        let isFirstReading = true;
+        
+        // Control System State
+        let isLampOn = true; // Simulating the heat source (Relay 1)
+        let isFanOn = false; // Simulating the cooling actuator (Relay 2)
+        const FAN_ON_THRESHOLD = 35.0; // Temperatura para LIGAR o ventilador
+        const FAN_OFF_THRESHOLD = 25.0; // Temperatura para DESLIGAR o ventilador (Histerese)
+        const SET_POINT_LABEL = 29.0; // Rótulo geral do setpoint
+        
+        // Timing
+        const LOG_INTERVAL = 10000; // 10 segundos para log histórico (para simulação)
+        let lastLogTime = Date.now();
+
+        // --- DOM Elements ---
+        const led = document.getElementById('ledIndicator');
+        const resetButton = document.getElementById('resetButton');
+        const oledLines = {
+            l1: document.getElementById('oled-line-1'),
+            l2: document.getElementById('oled-line-2'),
+            l3: document.getElementById('oled-line-3'),
+            l4: document.getElementById('oled-line-4'),
+            l5: document.getElementById('oled-line-5'),
+        };
+        const lampStatusEl = document.getElementById('lampStatus');
+        const fanStatusEl = document.getElementById('fanStatus');
+        const firebaseStatusEl = document.getElementById('firebase-status');
+
+        // --- Chart.js Setup ---
+        const ctx = document.getElementById('realTimeChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array(15).fill(''),
+                datasets: [
+                    {
+                        label: 'Temperatura (°C)',
+                        data: Array(15).fill(null),
+                        borderColor: 'rgb(2, 132, 199)', 
+                        backgroundColor: 'rgba(2, 132, 199, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true,
+                        yAxisID: 'yTemp'
+                    },
+                    {
+                        label: 'Umidade (%)',
+                        data: Array(15).fill(null),
+                        borderColor: 'rgb(234, 179, 8)', 
+                        backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true,
+                        yAxisID: 'yHumid'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    yTemp: {
+                        type: 'linear',
+                        position: 'left',
+                        beginAtZero: false,
+                        suggestedMin: 15,
+                        suggestedMax: 35,
+                        ticks: {
+                            callback: value => value + '°C'
+                        }
+                    },
+                    yHumid: {
+                        type: 'linear',
+                        position: 'right',
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: {
+                            callback: value => value + '%'
+                        },
+                        grid: {
+                            drawOnChartArea: false, 
+                        },
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+
+        // --- Firebase Initialization and Auth ---
+        async function initFirebase() {
+            if (!firebaseConfig) {
+                 firebaseStatusEl.textContent = 'ERRO: Configuração do Firebase não encontrada.';
+                 firebaseStatusEl.classList.replace('bg-yellow-100', 'bg-red-100');
+                 return;
+            }
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Autenticação
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        isAuthReady = true;
+                        firebaseStatusEl.textContent = `Conectado como ID: ${userId}. Database pronto.`;
+                        firebaseStatusEl.classList.replace('bg-yellow-100', 'bg-green-100');
+                        startFirestoreListeners();
+                    } else {
+                        userId = null;
+                        isAuthReady = false;
+                        firebaseStatusEl.textContent = 'ERRO: Falha na autenticação.';
+                        firebaseStatusEl.classList.replace('bg-yellow-100', 'bg-red-100');
+                    }
+                });
+
+            } catch (error) {
+                console.error("Firebase initialization or auth error:", error);
+                firebaseStatusEl.textContent = `ERRO FATAL: ${error.message}`;
+                firebaseStatusEl.classList.replace('bg-yellow-100', 'bg-red-100');
+            }
+        }
+
+        // --- Firestore Real-time Listener (Simula leitura remota) ---
+        function startFirestoreListeners() {
+            if (!isAuthReady || !userId) return;
+
+            const realtimeDocRef = doc(db, `/artifacts/${appId}/users/${userId}/realtime_state/current`);
+            
+            // Listener para o estado em tempo real (para outros clientes verem)
+            onSnapshot(realtimeDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    // Atualiza estados de atuadores na UI com base nos dados do "servidor"
+                    updateActuatorUI(data.lampRelayState, data.fanRelayState);
+                }
+            }, (error) => {
+                console.error("Erro ao ouvir realtime_state:", error);
+                firebaseStatusEl.textContent = `ERRO Realtime: ${error.message}`;
+                firebaseStatusEl.classList.replace('bg-green-100', 'bg-red-100');
+            });
+        }
+        
+        // --- Firestore Write Functions ---
+        async function writeRealtimeState() {
+            if (!isAuthReady || !userId) return;
+            const realtimeDocRef = doc(db, `/artifacts/${appId}/users/${userId}/realtime_state/current`);
+            
+            const data = {
+                tempC: parseFloat(currentTemp_C.toFixed(2)),
+                humidity: parseFloat(currentHumidity.toFixed(1)),
+                timestamp: Date.now(),
+                fanRelayState: isFanOn,
+                lampRelayState: isLampOn
+            };
+
+            try {
+                await setDoc(realtimeDocRef, data, { merge: true });
+            } catch (error) {
+                console.error("Erro ao escrever realtime_state:", error);
+            }
+        }
+
+        async function writeHistoricalLog() {
+            if (!isAuthReady || !userId) return;
+            const historicalColRef = collection(db, `/artifacts/${appId}/users/${userId}/historical_log`);
+            
+            // Na simulação, vamos logar apenas a temperatura atual.
+            // Em um firmware real, você logaria médias e extremos de um período (10min).
+            const logData = {
+                time: new Date().toISOString(),
+                tempC: parseFloat(currentTemp_C.toFixed(2)),
+                humidity: parseFloat(currentHumidity.toFixed(1)),
+                fanOn: isFanOn,
+                isLogEntry: true
+            };
+
+            try {
+                await addDoc(historicalColRef, logData);
+            } catch (error) {
+                console.error("Erro ao escrever log histórico:", error);
+            }
+        }
+
+
+        // --- Core Logic Functions ---
+        function flashLED() {
+            led.classList.remove('bg-gray-300');
+            led.classList.add('bg-red-500');
+            setTimeout(() => {
+                led.classList.remove('bg-red-500');
+                led.classList.add('bg-gray-300');
+            }, 200); 
+        }
+
+        function simulateReadingAndControl() {
+            // 1. Simulação do Efeito Físico
+            let tempChange = 0;
+            let humidChange = (Math.random() - 0.5) * 2.0;
+
+            // Lâmpada (Carga Monitorada) Simula o Aquecimento
+            if (isLampOn) {
+                tempChange += 0.3; // Aquecimento
+            }
+
+            // Ventilador (Dispositivo de Proteção) Simula o Resfriamento
+            if (isFanOn) {
+                tempChange -= 0.5; // Resfriamento rápido
+            } else {
+                tempChange += 0.05; // Aquecimento lento (ambiente)
+            }
+            
+            currentTemp_C += tempChange;
+            currentHumidity += humidChange;
+
+            // Limita os valores (para simulação)
+            if (currentTemp_C < 18) currentTemp_C = 18;
+            if (currentTemp_C > 38) currentTemp_C = 38; // Max temp ajustada para simular atingindo 35C
+            if (currentHumidity < 20) currentHumidity = 20;
+            if (currentHumidity > 80) currentHumidity = 80;
+
+
+            // 2. Lógica de Controle ON/OFF (Histerese)
+            let newFanState = isFanOn;
+            if (currentTemp_C >= FAN_ON_THRESHOLD) { // LIGA em 35.0°C
+                newFanState = true; // LIGA o ventilador
+            } else if (currentTemp_C <= FAN_OFF_THRESHOLD) { // DESLIGA em 25.0°C
+                newFanState = false; // DESLIGA o ventilador
+            }
+            isFanOn = newFanState; // Atualiza o estado do atuador
+
+            // 3. Rastreamento Max/Min (Continua)
+            updateMaxMin();
+        }
+
+        function updateMaxMin() {
+            if (isFirstReading) {
+                maxTemp_C = currentTemp_C;
+                minTemp_C = currentTemp_C;
+                maxHumidity = currentHumidity;
+                minHumidity = currentHumidity;
+                isFirstReading = false;
+            }
+
+            if (currentTemp_C > maxTemp_C) maxTemp_C = currentTemp_C;
+            if (currentTemp_C < minTemp_C) minTemp_C = currentTemp_C;
+            if (currentHumidity > maxHumidity) maxHumidity = currentHumidity;
+            if (currentHumidity < minHumidity) minHumidity = currentHumidity;
+        }
+
+        function updateDisplay() {
+            oledLines.l2.textContent = `${currentTemp_C.toFixed(1)} C`;
+            oledLines.l3.textContent = `${currentHumidity.toFixed(0)} %`;
+            oledLines.l4.textContent = `FAN: [${isFanOn ? 'ON' : 'OFF'}] / LAMP: [${isLampOn ? 'ON' : 'OFF'}]`;
+            oledLines.l5.textContent = `MAX: ${maxTemp_C.toFixed(1)}C / MIN: ${minTemp_C.toFixed(1)}C`;
+
+            // Atualiza o display OLED para Max/Min (antiga linha 4)
+            // oledLines.l4.textContent = `MAX: ${maxTemp_C.toFixed(1)}C / ${maxHumidity.toFixed(0)}%`;
+            // oledLines.l5.textContent = `MIN: ${minTemp_C.toFixed(1)}C / ${minHumidity.toFixed(0)}%`;
+        }
+
+        function updateActuatorUI(lampState, fanState) {
+            // Lâmpada
+            lampStatusEl.textContent = `LÂMPADA (R1): ${lampState ? 'ON' : 'OFF'}`;
+            lampStatusEl.classList.remove(lampState ? 'bg-gray-100' : 'bg-red-100');
+            lampStatusEl.classList.add(lampState ? 'bg-red-100' : 'bg-gray-100');
+            lampStatusEl.classList.remove(lampState ? 'text-gray-800' : 'text-red-800');
+            lampStatusEl.classList.add(lampState ? 'text-red-800' : 'text-gray-800');
+
+            // Ventilador
+            fanStatusEl.textContent = `VENTILADOR (R2): ${fanState ? 'ON' : 'OFF'}`;
+            fanStatusEl.classList.remove(fanState ? 'bg-gray-100' : 'bg-green-100');
+            fanStatusEl.classList.add(fanState ? 'bg-green-100' : 'bg-gray-100');
+            fanStatusEl.classList.remove(fanState ? 'text-gray-800' : 'text-green-800');
+            fanStatusEl.classList.add(fanState ? 'text-green-800' : 'text-gray-800');
+        }
+
+        function updateChart() {
+            chart.data.labels.push('');
+            chart.data.labels.shift();
+            
+            chart.data.datasets[0].data.push(currentTemp_C.toFixed(1));
+            chart.data.datasets[0].data.shift();
+
+            chart.data.datasets[1].data.push(currentHumidity.toFixed(0));
+            chart.data.datasets[1].data.shift();
+            
+            chart.update('none'); 
+        }
+
+        function resetMaxMin() {
+            isFirstReading = true;
+            updateMaxMin(); 
+            
+            // Feedback visual do reset
+            oledLines.l1.textContent = "LOG RESETADO!";
+            oledLines.l2.textContent = "";
+            oledLines.l3.textContent = "";
+            setTimeout(() => {
+                oledLines.l1.textContent = "MODO: CONTROLE AUTOMÁTICO";
+            }, 1000);
+        }
+
+        // --- Main Loop (Simulates device loop: Sense -> Control -> Actuate -> Persist) ---
+        function mainLoop() {
+            flashLED();
+            
+            // 1. Simula Leitura e Lógica de Controle
+            simulateReadingAndControl();
+
+            // 2. Atualiza UI Local
+            updateDisplay();
+            updateChart();
+            updateActuatorUI(isLampOn, isFanOn); // Atualiza UI com o estado dos atuadores
+
+            // 3. Persistência de Dados (IoT)
+            if (isAuthReady && userId) {
+                // Escreve estado em tempo real (necessário para o gráfico e status)
+                writeRealtimeState();
+
+                // Escreve log histórico periodicamente
+                if (Date.now() - lastLogTime >= LOG_INTERVAL) {
+                    writeHistoricalLog();
+                    lastLogTime = Date.now();
+                }
+            }
+        }
+
+        // --- Event Listeners and Startup ---
+        resetButton.addEventListener('click', resetMaxMin);
+
+        document.querySelectorAll('a.nav-link').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+
+        // Inicializa o Firebase e a simulação
+        initFirebase().then(() => {
+            mainLoop(); // Run once immediately
+            setInterval(mainLoop, 2000); // Run every 2 seconds
+        });
+
+    </script>
+</body>
+</html>
